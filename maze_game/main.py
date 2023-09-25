@@ -1,6 +1,6 @@
-from maze import GameSolver
+from maze import GameSolver, Runner
 
 
 if __name__ == '__main__':
-    game = GameSolver()
-    game.mainloop()
+    runner = Runner()
+    runner.mainloop()
