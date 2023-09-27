@@ -21,7 +21,7 @@ from dataclasses import dataclass
 # Constants
 STATE_N = 25
 ACTIONS_N = 4
-SLEEP_T = 0.01
+SLEEP_T = 0.001
 TURNS = 1000
 
 
@@ -55,13 +55,6 @@ class GameSolver:
         """
         return self.env.reset()
 
-    def draw(self) -> None:
-        """
-        Render the environment and pause briefly.
-        """
-        self.env.render()
-        time.sleep(SLEEP_T)
-
     @property
     def random_action(self) -> int:
         """
@@ -84,6 +77,68 @@ class GameSolver:
         """
         return self.random_action
 
+    def play_turn(self, state: int):
+        """
+        Play a single turn of the game.
+
+        Args:
+            state (int): The current state.
+        """
+        action = self.get_action(state)
+        next_state, reward, done, _ = self.take_action(action)
+        self.total_reward += reward
+        return next_state, reward, done, action
+
+
+class Runner:
+    def __init__(self):
+        """
+        Class to control the game flow and provide information about the game's progress.
+        """
+        self.env = gym.make('maze-sample-5x5-v0', disable_env_checker=True)
+        self.actor = GameSolver(self.env)
+        self.finished = False
+        self.states = []
+        self.actions = []
+        self.rewards = []
+
+    def update_trajectory(self, state: np.ndarray, action: int, reward: int) -> None:
+        self.states.append(state)
+        self.actions.append(action)
+        self.rewards.append(reward)
+
+    def mainloop(self, max_len: int=TURNS) -> None:
+        """
+        Main loop to run the game.
+        """
+        state = self.starting_state
+
+        for attempt in range(max_len):
+            state = self.get_next_observation(state)
+            self.draw()
+
+            if self.has_finished(attempt):
+                break
+
+        self.check_failed()
+
+    def draw(self) -> None:
+        """
+        Render the environment and pause briefly.
+        """
+        self.env.render()
+        time.sleep(SLEEP_T)
+
+    @property
+    def reward_result(self) -> int:
+        """
+        Property to get the total reward accumulated during the game.
+
+        Returns:
+            int: The total reward.
+        """
+        return self.actor.total_reward
+
     @staticmethod
     def get_state(observation: tuple) -> int:
         """
@@ -97,39 +152,6 @@ class GameSolver:
         """
         return int(np.sqrt(STATE_N) * observation[0] + observation[1])
 
-    def play_turn(self, state: int):
-        """
-        Play a single turn of the game.
-
-        Args:
-            state (int): The current state.
-        """
-        action = self.get_action(state)
-        next_state, reward, done, _ = self.take_action(action)
-        self.total_reward += reward
-        self.draw()
-        return next_state, done
-
-
-class Runner:
-    def __init__(self):
-        """
-        Class to control the game flow and provide information about the game's progress.
-        """
-        self.env = gym.make('maze-sample-5x5-v0', disable_env_checker=True)
-        self.actor = GameSolver(self.env)
-        self.finished = False
-
-    @property
-    def reward_result(self) -> int:
-        """
-        Property to get the total reward accumulated during the game.
-
-        Returns:
-            int: The total reward.
-        """
-        return self.actor.total_reward
-
     @property
     def starting_state(self) -> int:
         """
@@ -138,8 +160,8 @@ class Runner:
         Returns:
             int: The initial state.
         """
-        obs = self.actor.initial_state()
-        state = self.actor.get_state(obs)
+        obs = self.env.reset()
+        state = self.get_state(obs)
         return state
 
     def get_next_observation(self, state: int) -> int:
@@ -152,9 +174,10 @@ class Runner:
         Returns:
             int: The next state.
         """
-        next_obs, done = self.actor.play_turn(state)
+        next_obs, reward, done, action = self.actor.play_turn(state)
         self.finished = done
-        state = self.actor.get_state(next_obs)
+        self.update_trajectory(next_obs, action, reward)
+        state = self.get_state(next_obs)
         return state
 
     def has_finished(self, attempt: int) -> bool:
@@ -181,15 +204,3 @@ class Runner:
             print('ПОТРАЧЕНО')
             print(f'Reward:{self.reward_result}')
 
-    def mainloop(self):
-        """
-        Main loop to run the game.
-        """
-        state = self.starting_state
-
-        for n in range(TURNS):
-            state = self.get_next_observation(state)
-            if self.has_finished(n):
-                break
-
-        self.check_failed()
