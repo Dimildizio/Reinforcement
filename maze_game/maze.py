@@ -16,7 +16,7 @@ import gym_maze
 import numpy as np
 import time
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 
 # Constants
@@ -27,6 +27,7 @@ SLEEP_T = 0.01
 TURNS = 1000
 EPOCHS = 10
 Q_PARAM = 0.9
+
 
 @dataclass
 class RandomAgent:
@@ -48,7 +49,6 @@ class RandomAgent:
         """
         result = self.env.step(action)
         return result
-
 
     @property
     def random_action(self) -> int:
@@ -72,7 +72,7 @@ class RandomAgent:
         """
         return self.random_action
 
-    def play_turn(self, state: int):
+    def play_turn(self, state: int) -> Tuple:
         """
         Play a single turn of the game.
 
@@ -86,29 +86,56 @@ class RandomAgent:
 
 @dataclass
 class CrossEntropyAgent(RandomAgent):
+    """
+    Class for a Cross-Entropy Agent that uses a random action strategy.
+    """
     states_n: int = STATES_N
-    model:np.ndarray = None
-
+    model: np.ndarray = None
 
     @property
-    def zero_model(self):
+    def zero_model(self) -> np.ndarray:
+        """
+        Generates an initial model with equal probabilities for each action in every state.
+
+        Returns:
+            np.ndarray: An array representing the initial model.
+        """
         return np.ones((self.states_n, self.actions_n))
+
     def __post_init__(self):
+        """
+        Initializes the agent and model if necessary.
+        """
         super().__init__(self.env, self.actions_n)
         if self.model is None:
             self.model = self.zero_model / self.actions_n
 
-    def get_action(self, state) -> int:
+    def get_action(self, state: int) -> int:
+        """
+        Selects an action based on the current state and the agent's model.
+
+        Args:
+            state: The current state of the environment.
+
+        Returns:
+            int: The selected action.
+        """
         actions = np.arange(self.actions_n)
-        probability =self.model[state]
+        probability = self.model[state]
         action = int(np.random.choice(actions, p=probability))
         return action
 
-    def fit(self, elite_trajectories):
+    def fit(self, elite_trajectories: List) -> None:
+        """
+        Updates the agent's model based on the elite trajectories.
+
+        Args:
+            elite_trajectories: List of trajectories containing states and corresponding actions.
+        """
         new_model = self.zero_model
         for trajectory in elite_trajectories:
             for state, action in zip(trajectory['states'], trajectory['actions']):
-                new_model[state][action] +=1
+                new_model[state][action] += 1
 
         for state in range(self.states_n):
             states_sum = np.sum(new_model[state])
@@ -117,7 +144,6 @@ class CrossEntropyAgent(RandomAgent):
             else:
                 new_model[state] = self.model[state].copy()
         self.model = new_model
-
 
 
 class Runner:
@@ -131,61 +157,111 @@ class Runner:
         self.finished = False
         self.trajectory = self.init_trajectory()
 
-    def switch_vis(self):
+    def switch_vis(self) -> None:
+        """
+        Toggles the visualization mode.
+        """
         self.visualize = not self.visualize
 
-    def init_trajectory(self) -> Dict:
-        trajectory =        {'states':[],
-                           'actions':[],
-                           'rewards':[]}
+    @staticmethod
+    def init_trajectory() -> Dict:
+        """
+        Initializes a new trajectory dictionary.
+
+        Returns:
+            dict: A dictionary with keys 'states', 'actions', and 'rewards', each containing an empty list.
+        """
+        trajectory = {'states': [],
+                      'actions': [],
+                      'rewards': []}
         return trajectory
 
+    def update_trajectory(self, state: int, action: int, reward: int) -> None:
+        """
+        Updates the trajectory with new state, action, and reward.
 
-    def update_trajectory(self, state: np.ndarray, action: int, reward: int) -> None:
+        Args:
+            state (int): The current state.
+            action (int): The taken action.
+            reward (int): The obtained reward.
+        """
         self.trajectory['states'].append(state)
         self.trajectory['actions'].append(action)
         self.trajectory['rewards'].append(reward)
 
-    def run_epoch(self):
+    def run_epoch(self) -> None:
+        """
+        Runs a single epoch of the game and resets the trajectory.
+
+        Returns:
+            dict: The trajectory dictionary.
+        """
         self.trajectory = self.init_trajectory()
         return self.get_trajectory()
 
-    def iter_train(self, traj: int=TRAJECTORIES_N):
+    def iter_train(self, traj: int = TRAJECTORIES_N) -> List:
+        """
+        Iteratively runs epochs for training.
+
+        Args:
+            traj (int): Number of trajectories. Defaults to TRAJECTORIES_N.
+
+        Returns:
+            list: List of elite trajectories.
+        """
         trajectories = [self.run_epoch() for _ in range(traj)]
         total_rewards = self.get_total_reward(trajectories)
         q = np.quantile(total_rewards, Q_PARAM)
         elite_trajectories = [traj for traj in trajectories if np.sum(traj['rewards']) > q]
         return elite_trajectories
 
-    def mainloop(self, epochs=EPOCHS):
-        for epoch in range(epochs):
+    def mainloop(self, epochs=EPOCHS) -> None:
+        """
+        Runs the main training loop for a specified number of epochs.
+
+        Args:
+            epochs (int): Number of training epochs. Defaults to EPOCHS.
+        """
+        for _ in range(epochs):
             elite_trajectories = self.iter_train()
             self.actor.fit(elite_trajectories)
 
+    def get_model(self) -> np.ndarray:
+        """
+        Obtains the model.
 
-    def get_model(self):
+        Returns:
+            np.ndarray: The agent's model.
+        """
         self.switch_vis()
         self.get_trajectory()
         return self.actor.model
 
-    def get_total_reward(self, trajectories):
+    @staticmethod
+    def get_total_reward(trajectories: List) -> float:
+        """
+        Calculates the total reward from a list of trajectories.
+
+        Args:
+            trajectories (list): List of trajectories.
+
+        Returns:
+            float: The total reward.
+        """
         return np.sum([np.sum(tra['rewards']) for tra in trajectories])
 
-
-    def get_trajectory(self, max_len: int=TURNS) -> Dict:
+    def get_trajectory(self, max_len: int = TURNS) -> Dict:
         """
         Main loop to run the game.
         """
         state = self.starting_state
 
-        for attempt in range(max_len):
+        for _ in range(max_len):
             state = self.get_next_observation(state)
             self.draw()
 
-            if self.has_finished(attempt):
+            if self.finished:
                 break
-
-        #self.check_failed()
         return self.trajectory
 
     def draw(self) -> None:
@@ -207,7 +283,7 @@ class Runner:
         return sum(self.trajectory['rewards'])
 
     @staticmethod
-    def get_state(observation: tuple) -> int:
+    def get_state(observation: Tuple) -> int:
         """
         Get the state corresponding to the given observation.
 
@@ -246,28 +322,3 @@ class Runner:
         self.update_trajectory(state, action, reward)
         state = self.get_state(next_obs)
         return state
-
-    def has_finished(self, attempt: int) -> bool:
-        """
-        Check if the game has finished.
-
-        Args:
-            attempt (int): The current attempt number.
-
-        Returns:
-            bool: True if the game has finished, False otherwise.
-        """
-        if self.finished:
-            #print(f'attempt:{attempt}\nreward:{self.reward_result}')
-            return True
-        else:
-            return False
-
-    def check_failed(self):
-        """
-        Print a message if the game was not successfully completed.
-        """
-        if not self.finished:
-            print('ПОТРАЧЕНО')
-            print(f'Reward:{self.reward_result}')
-
