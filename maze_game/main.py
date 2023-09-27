@@ -1,7 +1,9 @@
-from maze import Runner
+from maze import Maze, CrossEntropyAgent, Runner
 
 
 if __name__ == '__main__':
-    runner = Runner()
-    runner.mainloop()
-    print(runner.get_model())
+    env = Maze()
+    agent = CrossEntropyAgent()
+    runner = Runner(agent, env)
+    runner.run()
+
